@@ -1,0 +1,46 @@
+package com.raje.sarma.interceptor;
+
+import com.raje.sarma.service.LoggerService;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
+import org.springframework.core.MethodParameter;
+import org.springframework.http.MediaType;
+import org.springframework.http.converter.HttpMessageConverter;
+import org.springframework.http.server.ServerHttpRequest;
+import org.springframework.http.server.ServerHttpResponse;
+import org.springframework.http.server.ServletServerHttpRequest;
+import org.springframework.http.server.ServletServerHttpResponse;
+import org.springframework.lang.NonNull;
+import org.springframework.web.bind.annotation.ControllerAdvice;
+import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice;
+
+@ControllerAdvice
+@RequiredArgsConstructor
+public class ResponseBodyInterceptor implements ResponseBodyAdvice<Object> {
+
+  private final LoggerService loggerService;
+
+  @Override
+  public boolean supports(@NonNull MethodParameter returnType,
+      @NonNull Class<? extends HttpMessageConverter<?>> converterType) {
+    return true;
+  }
+
+  @Override
+  public Object beforeBodyWrite(Object body, @NonNull MethodParameter returnType,
+      @NonNull MediaType selectedContentType,
+      @NonNull Class<? extends HttpMessageConverter<?>> selectedConverterType,
+      @NonNull ServerHttpRequest request, @NonNull ServerHttpResponse response) {
+    HttpServletRequest httpServletRequest = ((ServletServerHttpRequest) request).getServletRequest();
+    HttpServletResponse httpServletResponse = ((ServletServerHttpResponse) response).getServletResponse();
+
+    try {
+      loggerService.saveResponse(httpServletRequest, httpServletResponse, body);
+      return body;
+    } catch (Exception e) {
+      loggerService.saveError(httpServletRequest, httpServletResponse, e);
+      throw new RuntimeException(e);
+    }
+  }
+}

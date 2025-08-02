@@ -1,0 +1,36 @@
+server:
+  port: 8090
+  servlet:
+    context-path: /sb-compression
+  compression:
+    enabled: false
+spring:
+  h2:
+    console.enabled: true
+  datasource:
+    url: jdbc:h2:mem:doc-compression-app
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: password
+    jpa:
+      spring.jpa.database-platform: org.hibernate.dialect.H2Dialect
+app:
+  compression:
+    enabled: true
+    min-response-size: 2048
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain,text/css,text/javascript,application/javascript
+management:
+  endpoint:
+    health:
+      enabled: true
+      show-details: "ALWAYS"
+  endpoints:
+    web:
+      cors:
+        allowed-origins:
+          - '*'
+        max-age: 3600
+        allowed-methods:
+          - '*'
+      exposure:
+        include: info,health,*

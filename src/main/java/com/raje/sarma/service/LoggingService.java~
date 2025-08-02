@@ -1,0 +1,5 @@
+package com.raje.sarma.service;
+
+public interface LoggingService {
+
+}
