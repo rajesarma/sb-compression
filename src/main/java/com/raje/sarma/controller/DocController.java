@@ -64,11 +64,11 @@ public class DocController {
     if (Objects.isNull(document) || document.length == 0) {
       return ResponseEntity.noContent().build();
     }
-    return ResponseEntity.ok(new String(document, StandardCharsets.UTF_8));
-//    return ResponseEntity
-//        .ok()
-//        .header("Content-Type", "text/plain; charset=UTF-8")
-//        .body(document);
+//    return ResponseEntity.ok(new String(document, StandardCharsets.UTF_8));
+    return ResponseEntity
+        .ok()
+        .header("Content-Type", "text/plain; charset=UTF-8")
+        .body(document);
   }
 
 }

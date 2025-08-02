@@ -5,8 +5,10 @@ import jakarta.servlet.WriteListener;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpServletResponseWrapper;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
+import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
 
 public class GzipResponseWrapper extends HttpServletResponseWrapper {
@@ -34,7 +36,9 @@ public class GzipResponseWrapper extends HttpServletResponseWrapper {
 
         @Override
         public void write(byte[] b, int off, int len) {
-          buffer.write(b, off, len);
+          if (len > 0) {
+            buffer.write(b, off, len);
+          }
         }
 
         @Override
@@ -53,7 +57,7 @@ public class GzipResponseWrapper extends HttpServletResponseWrapper {
   }
 
   @Override
-  public PrintWriter getWriter() {
+  public PrintWriter getWriter() throws UnsupportedEncodingException {
     if (servletOutputStream != null) {
       throw new IllegalStateException("getOutputStream() has already been called");
     }
@@ -61,12 +65,21 @@ public class GzipResponseWrapper extends HttpServletResponseWrapper {
     if (writer == null) {
       String characterEncoding = getCharacterEncoding();
       if (characterEncoding == null) {
-        characterEncoding = "UTF-8";
-        getResponse().setCharacterEncoding(characterEncoding);
+        characterEncoding = getResponse().getCharacterEncoding();
+        if (characterEncoding == null) {
+          characterEncoding = "UTF-8";
+          getResponse().setCharacterEncoding(characterEncoding);
+        }
       }
-      writer = new PrintWriter(new OutputStreamWriter(buffer, StandardCharsets.UTF_8));
+//      writer = new PrintWriter(new OutputStreamWriter(buffer, StandardCharsets.UTF_8));
+      writer = new PrintWriter(new OutputStreamWriter(buffer, getCharacterEncoding()), true);
     }
     return writer;
+  }
+
+  @Override
+  public String getContentType() {
+    return getResponse().getContentType();
   }
 
   @Override
@@ -98,5 +111,16 @@ public class GzipResponseWrapper extends HttpServletResponseWrapper {
       writer.flush();
     }
     return buffer.toByteArray();
+  }
+
+  @Override
+  public void flushBuffer() throws IOException {
+    if (writer != null) {
+      writer.flush();
+    }
+    if (servletOutputStream != null) {
+      servletOutputStream.flush();
+    }
+    super.flushBuffer();
   }
 }

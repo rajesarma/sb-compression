@@ -14,6 +14,8 @@ import java.util.stream.Collectors;
 import java.util.zip.GZIPOutputStream;
 import lombok.NonNull;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.util.AntPathMatcher;
@@ -21,6 +23,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 @Component
+@Order(Ordered.HIGHEST_PRECEDENCE)
 public class GzipResponseCompressionFilter extends OncePerRequestFilter {
 
   @Value("${app.compression.min-response-size:2048}")
@@ -57,8 +60,8 @@ public class GzipResponseCompressionFilter extends OncePerRequestFilter {
       filterChain.doFilter(request, response);
       return;
     }
-//    handleResponseWithSizeCheck(request, response, filterChain); // implementation without size check
-    handleResponseWithoutSizeCheck(request, response, filterChain); // implementation without size check
+    handleResponseWithSizeCheck(request, response, filterChain); // implementation without size check
+//    handleResponseWithoutSizeCheck(request, response, filterChain); // implementation without size check
   }
 
   private void handleResponseWithSizeCheck(
@@ -70,72 +73,81 @@ public class GzipResponseCompressionFilter extends OncePerRequestFilter {
     GzipResponseWrapper wrappedResponse = new GzipResponseWrapper(response);
     try {
       filterChain.doFilter(request, wrappedResponse);
+//      wrappedResponse.flushBuffer(); // Ensure writer/outputstream is flushed
       byte[] originalBytes = wrappedResponse.getCapturedData();
+      String originalContentType = wrappedResponse.getContentType();
+      String originalEncoding = wrappedResponse.getCharacterEncoding();
 
-      String contentType = response.getContentType();
+//      String contentType = wrappedResponse.getContentType();
       boolean isCompressableMimeType = false;
-      if (contentType != null) {
+      if (StringUtils.hasText(originalContentType) && StringUtils.hasText(compressibleMimeTypes)) {
         // Extract just the MIME type part, ignoring charset (e.g., "application/json;charset=UTF-8")
-        String baseContentType = contentType.split(";")[0].trim();
+        String baseContentType = originalContentType.split(";")[0].trim();
         Set<String> mimeTypes = Arrays.stream(compressibleMimeTypes.trim().split(","))
+            .map(String::trim)
             .collect(Collectors.toSet());
-        for (String mimeType : mimeTypes) {
-          if (baseContentType.equalsIgnoreCase(mimeType.trim())) {
-            isCompressableMimeType = true;
-            break;
-          }
-        }
+        isCompressableMimeType = mimeTypes.contains(baseContentType);
       }
 
       boolean shouldCompress = compressionEnabled
           && originalBytes.length >= minResponseSize
-          && isCompressableMimeType;
-
-      if (response.getStatus() != HttpServletResponse.SC_OK) {
-        // Non-OK status: write uncompressed
-        response.getOutputStream().write(originalBytes);
-        return;
-      }
+          && isCompressableMimeType
+          && response.getStatus() == HttpServletResponse.SC_OK;
 
       if (shouldCompress) {
-        response.setHeader(HttpHeaders.CONTENT_ENCODING, GZIP);
+        System.out.println("Before setting header, committed? " + response.isCommitted());
+        response.setHeader(HttpHeaders.CONTENT_ENCODING, "gzip");
+        System.out.println("After setting header: " + response.getHeader(HttpHeaders.CONTENT_ENCODING));
         response.setHeader("Vary", "Accept-Encoding");
-        response.setContentType("text/plain");
-        response.setCharacterEncoding("UTF-8");
+
+        response.setContentType(originalContentType);
+        if (StringUtils.hasText(originalEncoding)) {
+          response.setCharacterEncoding(originalEncoding);
+        }
+
+//        response.setContentType("text/plain");
+//        response.setCharacterEncoding("UTF-8");
         response.setContentLength(-1); // Required when using GZIP
 
         try (GZIPOutputStream gzipOutputStream = new GZIPOutputStream(response.getOutputStream())) {
           gzipOutputStream.write(originalBytes);
-        } catch (IOException e) {
+          gzipOutputStream.finish(); // Ensure full compression output
+        } /*catch (IOException e) {
           System.err.println(
               "Error during GZIP compression, falling back to uncompressed: " + e.getMessage());
-          // Clear GZIP headers if fallback
-          response.setHeader(HttpHeaders.CONTENT_ENCODING, null);
-          response.setHeader("Vary", null); // Remove Vary if not Gzipped
-          response.setContentLength(originalBytes.length); // Set original length
-          response.getOutputStream().write(originalBytes); // Write uncompressed
-          response.getOutputStream().flush(); // Explicit flush for fallback
-        }
+          fallbackToUncompressed(response, originalBytes, originalContentType, originalEncoding);
+        }*/
       } else {
-        response.setContentLength(originalBytes.length); // Set original length
-        response.getOutputStream().write(originalBytes); // Write uncompressed
-        response.getOutputStream().flush(); // Explicit flush for non-compressed path
+        fallbackToUncompressed(response, originalBytes, originalContentType, originalEncoding);
       }
 
-      response.setHeader(HttpHeaders.CONTENT_ENCODING, GZIP);
-      response.setHeader("Vary", "Accept-Encoding");
-      response.setContentType("text/plain");
-      response.setCharacterEncoding("UTF-8");
-      response.setContentLength(-1); // Required when using GZIP
+      // Debug output
+      System.out.println("GZIP filter executed");
+      System.out.println("Original response size: " + originalBytes.length);
+      System.out.println("Should compress: " + shouldCompress);
+      System.out.println("Content-Encoding set: " + response.getHeader(HttpHeaders.CONTENT_ENCODING));
 
-      System.out.println("GZIP filter invoked");
-      System.out.println("Original content size: " + originalBytes.length);
-      System.out.println("Content type: " + contentType);
-      System.out.println("Content encoding: " + response.getHeader(HttpHeaders.CONTENT_ENCODING));
+      System.out.println("Final response content-type: " + response.getContentType());
+      System.out.println("Final headers: ");
+      response.getHeaderNames()
+          .forEach(name -> System.out.println(name + ": " + response.getHeader(name)));
+
     } catch (Exception e) {
       System.err.println("Unexpected error in GzipCompressionFilter: " + e.getMessage());
       throw e; // Re-throw to propagate to other error handlers
     }
+  }
+
+  private void fallbackToUncompressed(HttpServletResponse response, byte[] originalBytes,
+      String contentType, String encoding) throws IOException {
+    // Clean up GZIP headers if previously set
+    response.setHeader(HttpHeaders.CONTENT_ENCODING, null);
+    response.setHeader("Vary", null);
+    if (contentType != null) response.setContentType(contentType);
+    if (encoding != null) response.setCharacterEncoding(encoding);
+    response.setContentLength(originalBytes.length);
+    response.getOutputStream().write(originalBytes);
+    response.getOutputStream().flush();
   }
 
   private void handleResponseWithoutSizeCheck(
