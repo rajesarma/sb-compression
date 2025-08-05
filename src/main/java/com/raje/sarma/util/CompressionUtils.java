@@ -1,4 +1,4 @@
-package com.raje.sarma;
+package com.raje.sarma.util;
 
 
 import java.io.ByteArrayOutputStream;

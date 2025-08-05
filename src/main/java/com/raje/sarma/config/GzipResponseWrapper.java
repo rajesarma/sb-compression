@@ -9,7 +9,6 @@ import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.io.UnsupportedEncodingException;
-import java.nio.charset.StandardCharsets;
 
 public class GzipResponseWrapper extends HttpServletResponseWrapper {
 
@@ -107,8 +106,15 @@ public class GzipResponseWrapper extends HttpServletResponseWrapper {
   }
 
   public byte[] getCapturedData() {
-    if (writer != null) {
-      writer.flush();
+    try {
+      if (writer != null) {
+        writer.flush();
+      }
+      if (servletOutputStream != null) {
+        servletOutputStream.flush();
+      }
+    } catch (IOException ignored) {
+
     }
     return buffer.toByteArray();
   }
